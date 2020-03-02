@@ -11,18 +11,8 @@ from scipy import linalg as la
 import georinex as gr
 
 def read_rinex():
-    # This function will read in the satellite data from the text files and return them
-    print('Read rinex data')
-    rinex_dat = gr.load('brdc2930.11n')
-    rinex_df = rinex_dat.to_dataframe()
-    print(rinex_df)
-
-
-
-def read__novatel():
-    print('Read novetel data')
-
-
+    df = gr.load('brdc2930.11n').to_dataframe()
+    return df
 def gen_least_sqr():
     print('Generalized Least Squares Position')
 
@@ -38,6 +28,6 @@ def pdop():
     print('PDOP')
 
 def main():
-    read_rinex()
+    brdc_df = read_rinex()
     print('Done')
 main()
