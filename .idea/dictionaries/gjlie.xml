@@ -5,6 +5,7 @@
       <w>hdop</w>
       <w>pdop</w>
       <w>rinex</w>
+      <w>sqrt</w>
       <w>vdop</w>
     </words>
   </dictionary>
