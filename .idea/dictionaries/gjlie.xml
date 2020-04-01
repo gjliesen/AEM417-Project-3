@@ -2,10 +2,17 @@
   <dictionary name="gjlie">
     <words>
       <w>brdc</w>
+      <w>cosv</w>
+      <w>denc</w>
+      <w>ecef</w>
       <w>hdop</w>
+      <w>idot</w>
+      <w>numc</w>
       <w>pdop</w>
       <w>pseudorange</w>
       <w>rinex</w>
+      <w>rname</w>
+      <w>sinv</w>
       <w>sqrt</w>
       <w>vdop</w>
     </words>
