@@ -1,0 +1,50 @@
+Metadata-Version: 2.1
+Name: RinexParser
+Version: 1.0.1
+Summary: Parsing Rinex files (supports version 2+3)
+Home-page: https://gitlab.com/dach.pos/rinexparser
+Author: Juergen Fredriksson
+Author-email: juergen.fredriksson@bev.gv.at
+License: UNKNOWN
+Keywords: rinex parser rinex2 rinex3 gnss gps galileo beidou glonass
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 2
+Classifier: Programming Language :: Python :: 2.7
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Classifier: Development Status :: 3 - Alpha
+Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)
+Classifier: Topic :: Scientific/Engineering :: Interface Engine/Protocol Translator
+Classifier: Operating System :: POSIX :: Linux
+Description-Content-Type: text/markdown
+
+# RinexParser
+
+Python scripts to analyse Rinex data. Supports Rinex 2 and Rinex 3
+
+# Install
+
+```
+git clone https://gitlab.com/dach.pos/rinexparser.git
+cd rinexparser
+make cleanAll
+make prepareVenv
+source env/bin/activate
+make setupVenv
+make test
+```
+
+If the test was successfull:
+
+``` python setup.py install ```
+
+Within your program you can then import the package.
+
+# Example
+
+Please check the file *tests/test_obs_reader.py* for examples
+
+Have Fun!
+
+
