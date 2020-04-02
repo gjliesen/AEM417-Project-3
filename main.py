@@ -148,7 +148,7 @@ def calc_sv_position(rover_icp_data, br_data):
 
 
 def get_sv_position(brdc, rover, sat):
-    index = [32, 32, 32, 32, 34, 32, 32, 32, 33]
+    index = [33, 33, 33, 33, 34, 33, 33, 33, 33]
     sat_pos = []
     for i in range(9):
         name = 'rover pseudorange ' + sat[i]
@@ -223,15 +223,16 @@ def calc_los_positions(sat_pos, ned_origin):
     return los_df
 
 
-def calc_los_elevations(sat_pos, los_df, R):
-    for i, series in sat_pos.iterrows():
-        x_los = los_df['x_los'][i]
-        y_los = los_df['y_los'][i]
-        z_los = los_df['z_los'][i]
+def calc_los_elevations(los_df, R):
+    for Time in los_df.index:
+        x_los = los_df.loc[Time, 'x_los']
+        y_los = los_df.loc[Time, 'y_los']
+        z_los = los_df.loc[Time, 'z_los']
         if x_los != 0:
             x_ned = convert_ecef_to_ned(x_los, y_los, z_los, R)
             temp = m.asin(-1 * x_ned[2]) * (180 / m.pi)
-            los_df.loc[i, 'elevation'] = temp
+            los_df.loc[Time, 'elevation'] = temp
+    return los_df
 
 
 def get_los_positions(sat_pos, ned_origin):
@@ -241,9 +242,9 @@ def get_los_positions(sat_pos, ned_origin):
     return los_df
 
 
-def get_los_elevations(sat_pos, los_df, R):
+def get_los_elevations(los_df, R):
     for i in range(9):
-        calc_los_elevations(sat_pos[i], los_df[i], R)
+        los_df[i] = calc_los_elevations(los_df[i], R)
     return los_df
 
 
@@ -262,15 +263,16 @@ def get_ref_sat(base_icp_data, los_df):
 
 
 def calc_dilution_of_precisions(pseudo_inv):
-    global c
-    sigma_x_sqr = pseudo_inv[0][0]
-    sigma_y_sqr = pseudo_inv[1][1]
-    sigma_z_sqr = pseudo_inv[2][2]
+    HDOP = []
+    VDOP = []
+    for i in range(848):
+        sigma_x_sqr = pseudo_inv[i][0][0]
+        sigma_y_sqr = pseudo_inv[i][1][1]
+        sigma_z_sqr = pseudo_inv[i][2][2]
 
-    VDOP = np.sqrt(sigma_z_sqr)
-    HDOP = np.sqrt(sigma_x_sqr + sigma_y_sqr + sigma_z_sqr)
-    DOP = [VDOP, HDOP]
-    return DOP
+        VDOP.append(np.sqrt(sigma_z_sqr))
+        HDOP.append(np.sqrt(sigma_x_sqr + sigma_y_sqr + sigma_z_sqr))
+    return [VDOP, HDOP]
 
 
 def vector(x_ref):
@@ -299,17 +301,20 @@ def calc_least_squares(data, H, rho, lat, long, h):
     return [rover_pos, pseudo_inv]
 
 
-def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R, sat):
+def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R):
     H_list = []
     rho_list = []
+    sat_str = ['2', '4', '5', '9', '10', '12', '17', '23', '25']
     for Time in base_icp_data.index:
+        sat = [0, 1, 2, 3, 4, 5, 6, 7, 8]
         rho = np.array([[]])
         H = np.array([[]])
-        iter = 0
         flag = True
-        x = sat_pos[base_icp_data.at[Time, 'Ref']].loc[Time, 'x']
-        y = sat_pos[base_icp_data.at[Time, 'Ref']].loc[Time, 'y']
-        z = sat_pos[base_icp_data.at[Time, 'Ref']].loc[Time, 'z']
+        ref = base_icp_data.at[Time, 'Ref']
+        x = sat_pos[ref].loc[Time, 'x']
+        y = sat_pos[ref].loc[Time, 'y']
+        z = sat_pos[ref].loc[Time, 'z']
+        del sat[ref]
         x_ref = convert_ecef_to_ned(x, y, z, R)
         vec = vector(x_ref)
         for i in sat:
@@ -322,10 +327,10 @@ def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R, sat):
                 H_temp = np.array([vec[0] - vec_temp[0],
                               vec[1] - vec_temp[1],
                               vec[2] - vec_temp[2]])
-                phi_rover_1 = rover_icp_data.iloc[iter, i]
-                phi_base_1 = base_icp_data.iloc[iter, i]
-                phi_rover_2 = rover_icp_data.iloc[iter, base_icp_data.at[Time, 'Ref']]
-                phi_base_2 = rover_icp_data.iloc[iter, base_icp_data.at[Time, 'Ref']]
+                phi_rover_1 = rover_icp_data.loc[Time, 'rover pseudorange ' + sat_str[i]]
+                phi_base_1 = base_icp_data.loc[Time, 'base pseudorange ' + sat_str[i]]
+                phi_rover_2 = rover_icp_data.loc[Time, 'rover pseudorange ' + sat_str[ref]]
+                phi_base_2 = base_icp_data.loc[Time, 'base pseudorange ' + sat_str[ref]]
                 rho_temp = (phi_rover_1 - phi_base_1) - (phi_rover_2 - phi_base_2)
                 if flag:
                     H = H_temp
@@ -334,15 +339,14 @@ def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R, sat):
                 else:
                     H = np.vstack((H, H_temp))
                     rho = np.vstack((rho, rho_temp))
-        iter+=1
         H_list.append(H)
         rho_list.append(rho)
     return [H_list, rho_list]
 
 
 def get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h):
-    ind = [0, 2, 3, 4, 5, 6, 7, 8]
-    [H, rho] = p_range_multi(base_icp_data, sat_pos, rover_icp_data, R, ind)
+
+    [H, rho] = p_range_multi(base_icp_data, sat_pos, rover_icp_data, R)
     return calc_least_squares(base_icp_data, H, rho, lat, long, h)
 
 
@@ -381,7 +385,7 @@ def main():
 
     # Line of Sight
     los_df = get_los_positions(sat_pos, ned_origin)
-    los_df = get_los_elevations(sat_pos, los_df, R)
+    los_df = get_los_elevations(los_df, R)
 
     # Calculate Reference Satellite
     base_icp_data = get_ref_sat(base_icp_data, los_df)
@@ -390,7 +394,7 @@ def main():
     [rover_pos, pseudo_inv] = get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h)
 
     # Dilutions of Precision
-    DOP = calc_dilution_of_precisions(pseudo_inv)
+    [VDOP,HDOP] = calc_dilution_of_precisions(pseudo_inv)
 
     # Plotting
     plt.plot(rover_pos['x'], rover_pos['y'])
@@ -400,7 +404,20 @@ def main():
     plt.title('Rover')
     plt.show()
 
-    print('End')
+    plt.plot(VDOP)
+    plt.grid(b=None, which='major', axis='both')
+    plt.xlabel('Time')
+    plt.ylabel('VDOP')
+    plt.title('VDOP')
+    plt.show()
+    x = list(range(0,848))
+    plt.plot(x, rover_pos['z'])
+    plt.grid(b=None, which='major', axis='both')
+    plt.xlabel('Time')
+    plt.ylabel('Down')
+    plt.title('Down')
+    plt.show()
+
 
 
 main()
