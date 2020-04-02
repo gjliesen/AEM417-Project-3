@@ -74,15 +74,6 @@ def get_ned_origin(file):
     return [x_base, y_base, z_base]
 
 
-def get_sv_position(brdc, rover, sat):
-    index = [32, 32, 32, 32, 34, 32, 32, 32, 33]
-    sat_pos = []
-    for i in range(9):
-        name = 'rover pseudorange ' + sat[i]
-        sat_pos.append(calc_sv_position(rover[name], brdc[i].iloc[[index[i]]].to_dict('list')))
-    return sat_pos
-
-
 def calc_sv_position(rover_icp_data, br_data):
     # Constants
     U = 3.986005e14  # m^3/s^2 WGS84 value of Earth's Gravitational Constant
@@ -99,11 +90,10 @@ def calc_sv_position(rover_icp_data, br_data):
     #     else:
     #         temp2['A'].loc[Time] = np.nan
     # Check for empty data
-    rover_icp_data.fillna(0)
-
     # Calculated Columns with Logic
-    temp['flag'] = np.where(rover_icp_data==0,False,True)
-    temp['A'] = np.where(temp['flag'], br_data.get('sqrtA')[0]**2, np.nan)
+    rover_icp_data = rover_icp_data.fillna(0)
+    temp['flag'] = np.where(rover_icp_data == 0, False, True)
+    temp['A'] = np.where(temp['flag'] == True, br_data.get('sqrtA')[0]**2, np.nan)
     # temp['A'] = temp2['A']
     # Calculations
     temp['U/A^3'] = ((temp['A']**3)**-1) * U
@@ -154,6 +144,15 @@ def calc_sv_position(rover_icp_data, br_data):
                    np.cos(temp['Omega_k'])
     sat_pos['z'] = temp['yk_prime'] * np.sin(temp['ik'])
     sat_pos = sat_pos.fillna(0)
+    return sat_pos
+
+
+def get_sv_position(brdc, rover, sat):
+    index = [32, 32, 32, 32, 34, 32, 32, 32, 33]
+    sat_pos = []
+    for i in range(9):
+        name = 'rover pseudorange ' + sat[i]
+        sat_pos.append(calc_sv_position(rover[name], brdc[i].iloc[[index[i]]].to_dict('list')))
     return sat_pos
 
 
@@ -345,7 +344,6 @@ def get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h):
     ind = [0, 2, 3, 4, 5, 6, 7, 8]
     [H, rho] = p_range_multi(base_icp_data, sat_pos, rover_icp_data, R, ind)
     return calc_least_squares(base_icp_data, H, rho, lat, long, h)
-
 
 
 def mapping(longitude_min, longitude_max, latitude_min, latitude_max, longitude, latitude):
