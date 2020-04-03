@@ -80,22 +80,11 @@ def calc_sv_position(rover_icp_data, br_data):
     OmegaDote = 7.2921151467e-5  # rad/s WGS84 Value of Earth's rotation rate
     To = 417600.000
 
-    # DataFrame declaration
+    # Calculations
     temp = pd.DataFrame(index=rover_icp_data.index)
-    # temp2 = pd.DataFrame(index=rover_icp_data.index, columns=['A'])
-    # rover_icp_data = rover_icp_data.fillna(0)
-    # for Time in temp.index:
-    #     if rover_icp_data.loc[Time] != 0:
-    #         temp2['A'].loc[Time] = br_data.get('sqrtA')[0]**2
-    #     else:
-    #         temp2['A'].loc[Time] = np.nan
-    # Check for empty data
-    # Calculated Columns with Logic
     rover_icp_data = rover_icp_data.fillna(0)
     temp['flag'] = np.where(rover_icp_data == 0, False, True)
     temp['A'] = np.where(temp['flag'] == True, br_data.get('sqrtA')[0]**2, np.nan)
-    # temp['A'] = temp2['A']
-    # Calculations
     temp['U/A^3'] = ((temp['A']**3)**-1) * U
     temp['sqrt(U/A^3)'] = np.sqrt(temp['U/A^3'].astype(float))
     temp['N'] = temp['sqrt(U/A^3)'] + br_data.get('DeltaN')[0]
@@ -198,16 +187,22 @@ def convert_wgs_to_lla(base_vector):
     return [lat, long, h, R]
 
 
-def convert_ecef_to_ned(x, y, z, R):
+def ecef_to_ned(x, y, z, R):
     x_ecef = np.array([[x], [y], [z]])
     x_temp = R.T @ (x_ecef)
     x_ned = [x_temp.item(0), x_temp.item(1), x_temp.item(2)]
     return x_ned
 
 
+def ecef_to_ned2(x, y, z, R):
+    x_ecef = np.array([[x], [y], [z]])
+    x_temp = R.T @ (x_ecef)
+    return x_temp.item(2)
+
+
 def calc_los_positions(sat_pos, ned_origin):
+    los_df = pd.DataFrame(index=sat_pos.index, columns=['x_los', 'y_los', 'z_los'])
     [x_base, y_base, z_base] = ned_origin
-    los_df = pd.DataFrame(index=sat_pos.index, columns=['x_los', 'y_los', 'z_los', 'elevation'])
     for i, series in sat_pos.iterrows():
         x = sat_pos['x'][i]
         y = sat_pos['y'][i]
@@ -224,15 +219,10 @@ def calc_los_positions(sat_pos, ned_origin):
 
 
 def calc_los_elevations(los_df, R):
-    for Time in los_df.index:
-        x_los = los_df.loc[Time, 'x_los']
-        y_los = los_df.loc[Time, 'y_los']
-        z_los = los_df.loc[Time, 'z_los']
-        if x_los != 0:
-            x_ned = convert_ecef_to_ned(x_los, y_los, z_los, R)
-            temp = m.asin(-1 * x_ned[2]) * (180 / m.pi)
-            los_df.loc[Time, 'elevation'] = temp
+    los_df['NED'] = los_df.apply(lambda r: ecef_to_ned2(r.iloc[0], r.iloc[1], r.iloc[2], R), axis=1)
+    los_df['elevation'] = np.arcsin(los_df['NED'].astype(float) * -1) * 180/m.pi
     return los_df
+
 
 
 def get_los_positions(sat_pos, ned_origin):
@@ -262,17 +252,11 @@ def get_ref_sat(base_icp_data, los_df):
     return base_icp_data
 
 
-def calc_dilution_of_precisions(pseudo_inv):
-    HDOP = []
-    VDOP = []
-    for i in range(848):
-        sigma_x_sqr = pseudo_inv[i][0][0]
-        sigma_y_sqr = pseudo_inv[i][1][1]
-        sigma_z_sqr = pseudo_inv[i][2][2]
-
-        VDOP.append(np.sqrt(sigma_z_sqr))
-        HDOP.append(np.sqrt(sigma_x_sqr + sigma_y_sqr + sigma_z_sqr))
-    return [VDOP, HDOP]
+def calc_dilution_of_precisions(rover_pos):
+    temp = pd.DataFrame(index = rover_pos.index)
+    temp['VDOP'] = np.sqrt(rover_pos['p_inv'].apply(lambda x: x[2][2]))
+    temp['HDOP'] = np.sqrt(rover_pos['p_inv'].apply(lambda x: x[0][0]) + rover_pos['p_inv'].apply(lambda x: x[1][1]))
+    return temp
 
 
 def vector(x_ref):
@@ -283,8 +267,7 @@ def vector(x_ref):
 
 
 def calc_least_squares(data, H, rho, lat, long, h):
-    rover_pos = pd.DataFrame(index=data.index, columns=['x','y','z','lat','long','alt'])
-    pseudo_inv = []
+    rover_pos = pd.DataFrame(index=data.index, columns=['x','y','z','lat','long','alt', 'p_inv'])
     for i in range(848):
         p_inv = la.inv(H[i].T @ H[i])
         x_hat = p_inv @ H[i].T @ rho[i]
@@ -297,8 +280,8 @@ def calc_least_squares(data, H, rho, lat, long, h):
         rover_pos.iloc[i, 3] = coord[0]
         rover_pos.iloc[i, 4] = coord[1]
         rover_pos.iloc[i, 5] = coord[2]
-        pseudo_inv.append(p_inv)
-    return [rover_pos, pseudo_inv]
+        rover_pos.iloc[i, 6] = p_inv
+    return rover_pos
 
 
 def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R):
@@ -315,14 +298,14 @@ def p_range_multi(base_icp_data, sat_pos, rover_icp_data, R):
         y = sat_pos[ref].loc[Time, 'y']
         z = sat_pos[ref].loc[Time, 'z']
         del sat[ref]
-        x_ref = convert_ecef_to_ned(x, y, z, R)
+        x_ref = ecef_to_ned(x, y, z, R)
         vec = vector(x_ref)
         for i in sat:
             if sat_pos[i].at[Time, 'x'] != 0:
                 x_temp = sat_pos[i].loc[Time, 'x']
                 y_temp = sat_pos[i].loc[Time, 'y']
                 z_temp = sat_pos[i].loc[Time, 'z']
-                sat_temp = convert_ecef_to_ned(x_temp, y_temp, z_temp, R)
+                sat_temp = ecef_to_ned(x_temp, y_temp, z_temp, R)
                 vec_temp = vector(sat_temp)
                 H_temp = np.array([vec[0] - vec_temp[0],
                               vec[1] - vec_temp[1],
@@ -350,13 +333,20 @@ def get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h):
     return calc_least_squares(base_icp_data, H, rho, lat, long, h)
 
 
-def mapping(longitude_min, longitude_max, latitude_min, latitude_max, longitude, latitude):
-    image_box = ((longitude_min, longitude_max, latitude_min, latitude_max))
-    fig, ax = plt.subplots(figsize = (8,7))
-    ax.scatter(longitude, latitude, zorder=1, alpha=0.2, c ='b', s=10)
-    ax.set_title('Plotting Spatial data on riyadh Map')
-    ax.set_xlim(longitude_min, longitude_max)
-    ax.set_ylim(latitude_min, latitude_max)
+def plot(rover_pos, DOP):
+    rover_pos.plot(x='x', y='y',title='Rover Position NE', grid=True)
+    plt.xlabel('N')
+    plt.ylabel('E')
+    plt.show()
+
+    rover_pos = rover_pos.reset_index()
+    DOP = DOP.reset_index()
+
+    rover_pos.plot(x='Time', y='z',title='Rover Down', grid = True)
+    plt.show()
+
+    DOP.plot(x='Time', y=['HDOP','VDOP'], title ='HDOP and VDOP', grid = True)
+    plt.show()
 
 
 def main():
@@ -391,33 +381,14 @@ def main():
     base_icp_data = get_ref_sat(base_icp_data, los_df)
 
     # Iterative Least Squares
-    [rover_pos, pseudo_inv] = get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h)
+    rover_pos = get_least_squares(base_icp_data, sat_pos, rover_icp_data, R, lat, long, h)
 
     # Dilutions of Precision
-    [VDOP,HDOP] = calc_dilution_of_precisions(pseudo_inv)
+    DOP = calc_dilution_of_precisions(rover_pos)
 
     # Plotting
-    plt.plot(rover_pos['x'], rover_pos['y'])
-    plt.grid(b=None, which='major', axis='both')
-    plt.xlabel('N')
-    plt.ylabel('E')
-    plt.title('Rover')
-    plt.show()
-
-    plt.plot(VDOP)
-    plt.grid(b=None, which='major', axis='both')
-    plt.xlabel('Time')
-    plt.ylabel('VDOP')
-    plt.title('VDOP')
-    plt.show()
-    x = list(range(0,848))
-    plt.plot(x, rover_pos['z'])
-    plt.grid(b=None, which='major', axis='both')
-    plt.xlabel('Time')
-    plt.ylabel('Down')
-    plt.title('Down')
-    plt.show()
-
+    plot(rover_pos, DOP)
+    print('done')
 
 
 main()
